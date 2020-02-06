@@ -98,17 +98,16 @@ sell_query_function <- function(sell_it){
 # PREPERATION
 #=======================================================================================================================================
 # Inconstant variables
-transaction <- 2
+transaction <- 0
 #calls <- 0
 
 # Keys and Symbols
 #---------------------------------------------------------------------------------------------------------------------------------------
 
-Symbols_and_Keys <- data.frame(Symbols = c("SINA"),
+Symbols_and_Keys <- data.frame(Symbols = c("AAPL", "SINA", "MSFT"),
                                            #"USDJPY","GBPUSD","AUDUSD","NZDUSD","EURUSD","USDJPY","GBPUSD","AUDUSD","NZDUSD"),
-                               Keys = c("PS4R6O34SKO7QMI7"))
-                                        #,"OZ1OB4JLZO38F64B",
-                                        #"LJN45VDK4LQUODHI","MAZM65O84SDP2ZSI",
+                               Keys = c("PS4R6O34SKO7QMI7","OZ1OB4JLZO38F64B","LJN45VDK4LQUODHI"))
+                                        #"MAZM65O84SDP2ZSI",
                                         #"626T9PJYPCBZXJH4","LMRU8T7Q1DVRE7ZV",
                                         #"ECYLECGWH064HPP8","73IWZI0WQ5ROP6Y6",
                                         #"GCTSR9ASVV0D8W7S","6NF4N7TVGI7UFVYC"))
@@ -160,19 +159,30 @@ indicators <- function(df_price){
   # MACD
   macd <- MACD(Cl(df_price), nFast=12, nSlow=26,
                nSig=9, maType=SMA) %>% tail(n=1)
-  # Save to an Objece
+  # Save to an Object
   Objects <- list("slope_150" = slope_EMA_150,
                   "slope_100" = slope_EMA_100,
                   "slope_50" = slope_EMA_50,
                   "EMA_150" = EMA_150, 
-                  "EMA_100" =EMA_100,
-                  "EMA_50" =EMA_50, 
-                  "bb" =bb,
-                  "rsi" =rsi, 
-                  "macd" =macd)
+                  "EMA_100" = EMA_100,
+                  "EMA_50" = EMA_50, 
+                  "bb" = bb,
+                  "rsi" = rsi, 
+                  "macd" = macd)
   # Save to the global environment
   assign("Indicators",as.data.frame(Objects),envir = .GlobalEnv)
   return(Objects)
+}
+
+# Buy call
+#---------------------------------------------------------------------------------------------------------------------------------------
+
+buy <- function(symbol){
+  # url <- paste("https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=buy&quantity=1&symbol=",
+  #  symbol,
+  #  sep = "")
+  url <- paste("BUY ", symbol)
+  return(url)
 }
 
 #=======================================================================================================================================
@@ -185,6 +195,9 @@ indicators <- function(df_price){
 EMA_Strategy <- function(df_price){
   # Define the current price
   current_price <- tail(Cl(df_price),1)
+  # Check the indicators
+  # indicators(df_price)
+  
   # Attach the dataframe for Price
   attach(Indicators)
   # ROC current Price
@@ -210,37 +223,59 @@ while (transaction <= TRANSACTION){
   # Buy
   #=======================================================================================================================================
   
+  # Define empty result dataframe
+  result <- data.frame(matrix(ncol = 3, nrow = 0))
+  # Colnames
+  colnames(result) <- c("PositionID", "Symbol", "Strategy")
   
-  
-  
-  for (i in 1:nrow(Symbols_and_Keys)) {
-    
+  for (i in 1:nrow(Symbols_and_Keys)){
+    # Global Variable
+    Symbol <- Symbols_and_Keys[i,1]
+    Key <- Symbols_and_Keys[i,2]
+    df_price <- Price(Symbol,Key)
+    # Check for indicators
+    indicators(df_price)
+    # Attach Indicators
+    attach(Indicators)
+    # Check for EMA Strategy
+    if (EMA_Strategy(df_price) == TRUE) {
+      # Add to dataframe result
+      result <- rbind(result, data.frame(PositionID = sample(1:100000,1), Symbol = Symbol, Strategy = "EMA-Strategy"))
+    # Buy it
+    url_buy <- (buy(Symbol))
+    buy_it <- fromJSON(url_buy)
+    # Add the DateTime
+    buy_it$Datetime <- Sys.time()
+    # Add the type of transaction
+    buy_it$Transaction <- "Buy"
+    # Count transaction
+    transaction <- transaction + 1
+    # Add transaction number to dataframe
+    buy_it$TNo <- transaction
+    # Define the sell query
+    buy_query <- buy_query_function(buy_it)
+    # Send the query to the transaction table
+    dbSendQuery(mydb, buy_query)
+    }
   }
   
   
-  # Buy
-  # ------------------------------------------------------------------------------------------------------------------------------------
-  url_buy <- "https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=buy&quantity=1&symbol=MCD"
-  buy_it <- fromJSON(url_buy)
-  # Add the DateTime
-  buy_it$Datetime <- Sys.time()
-  # Add the type of transaction
-  buy_it$Transaction <- "Buy"
-  # Count transaction
-  transaction <- transaction + 1
-  # Add transaction number to dataframe
-  buy_it$TNo <- transaction
-  # Define the sell query
-  buy_query <- buy_query_function(buy_it)
-  # Send the query to the transaction table
-  dbSendQuery(mydb, buy_query)
+  
+  
+  }
+  
+  
+
+
+
+
   # Sleep
   Sys.sleep(2)
   
   # Sell
   # ------------------------------------------------------------------------------------------------------------------------------------
-  url_sell <- "https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=sell&quantity=1&symbol=MCD"
-  sell_it <- fromJSON(url_sell)
+  #url_sell <- "https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=sell&quantity=1&symbol=MCD"
+  #sell_it <- fromJSON(url_sell)
   # Add the DateTime
   sell_it$Datetime <- Sys.time()
   # Add the type of transaction
