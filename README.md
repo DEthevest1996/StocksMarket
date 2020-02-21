@@ -1,5 +1,5 @@
 # Class: CIS-544 DATA MINING & MACHINE LRNG
-# Fantasy Stock Market Game
+Fantasy Stock Market Game
 ### last modified date 02/23/20
 
 This project was about a Fantasy Stock Market Game - stocks competition. The students were seperated into teams of two students. Each player got 100,000 fantasy money.
@@ -61,7 +61,7 @@ RStudio as an environment (https://rstudio.com)
 
 ## Authors
 
-Max Franke
+Max Franke & 
 Damian Etchevest
 
 
