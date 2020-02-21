@@ -1,6 +1,6 @@
 # Class: CIS-544 DATA MINING & MACHINE LRNG
 # Fantasy Stock Market Game
-# 02/23/20
+### last modified date 02/23/20
 
 This project was about a Fantasy Stock Market Game - stocks competition. The students were seperated into teams of two students. Each player got 100,000 fantasy money.
 The aim of the project was to increase its budget by developing complex machine learning algorithm in R which automatically buy and sell (day trading). Different rules were defined:
@@ -41,7 +41,7 @@ In this folder you find the final code in two versions. The authors tried two ve
 
 In this folder you find the final presentation of this project as a powerpoint.
 
-### Prerequisites
+## Prerequisites
 
 Install in R following packages / libraries:
  - jsonlite
@@ -50,7 +50,7 @@ Install in R following packages / libraries:
  - quantmod
  - magrittr
 
-### Database
+## Database
 
 In order to connect with the database, which is hosted on aws, please connect via R in the final R scripts. The database called "Stock_Market" and shows different tables which are used in order to increase the chance of getting stocks which are profitable.
 
