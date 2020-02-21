@@ -35,7 +35,7 @@ In this folder you find the development of the code. First, there was a play-saf
 
 ### 03_FinalCode
 
-In this folder you find the final code in two versions. The authors tried two versions of implementing the different strategies and funcitons. The difference between these versions is concerning the amount of connecting with the database in order to get signals or buy and sell open closing positions.
+In this folder you find the final code in two versions. The authors tried two versions of implementing the different strategies and funcitons. The difference between these versions is concerning the amount of connecting with the database in order to get signals or buy and sell open closing positions. 
 
 ### 04_Presentation
 
@@ -43,7 +43,7 @@ In this folder you find the final presentation of this project as a powerpoint.
 
 ## Prerequisites
 
-Install in R following packages / libraries:
+Install in R following packages / libraries (the install.packages commands are commented out, if you need to install, please run it first.)
  - jsonlite
  - forecast
  - RMySQL
@@ -59,6 +59,16 @@ In order to connect with the database, which is hosted on aws, please connect vi
 
 R (https://www.r-project.org)
 RStudio as an environment (https://rstudio.com)
+
+## Approach
+
+We are running in the main part of the scripts a while loop between 10 am and 4 pm and while transactions are <= 250. Then we are sending signals to a database for possible buy and sell options (we call it SIGNAL GENERATOR). All Instances are checking for different stocks and are sending the signals to the databases. Doing this, we are getting signals of 12 Instances and each Instance is checking for different symbols. After this, we check for strategies (EMA, time series, stochastic), which are based on different approaches in order to identify profitable stocks. If the strategies apply (are TRUE) then open a position in the database. The main script pulls then the buy options and send a request to projectrex for buying. Now, an open position is created in the database, we check if the strategies for sell (closing position) apply. If the strategies aplly we send a request to projectrex for selling this stock. We track in the database if we won or lost money by buying and selling the stock. Doing this we can implement in the future deep learning methods in order to detect which stock is concerning the probability is the best to buy. In order to see this visually, please see the powerpoint, slide 5.
+
+
+
+## How to run the code
+
+The code is hosted on AWS EC2 Instances. Every day from Monday to Friday a cronjob startet automatically from 10 am to 4 pm the scripts in order to be ready for the market (e.g. for cronjob: 00 10 * * 1-5 Rscript filename.R). If you want to try the Code you can run the global functions, and the strategies. If you want to check the different strategies e.g. for "MSFT" (Microsoft), please get at first the Price with the function Price(Symbol,Key) (in this case Price("MSFT), Key). If you save this to a variable, you can insert this variable into the different strategies. Otherwise, you can run the script between 10 am and 4 pm, if the connection to alphavantager and projectrex is available. 
 
 ## Authors
 
