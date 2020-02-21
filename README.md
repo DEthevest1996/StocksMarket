@@ -53,6 +53,7 @@ Install in R following packages / libraries:
 ## Database
 
 In order to connect with the database, which is hosted on aws, please connect via R in the final R scripts. The database called "Stock_Market" and shows different tables which are used in order to increase the chance of getting stocks which are profitable.
+(may getting an error after 02/23 because of budget in aws)
 
 ## Built With
 
