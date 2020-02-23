@@ -386,6 +386,63 @@ while (format(strptime(Sys.time(),"%Y-%m-%d %H:%M:%S"),"%H:%M") >= "15:00" &
     }
     }
   }
+    
+    game_transactions <- dbSendQuery(mydb, paste0("select p.Symbol, e.Volume,e.Price, p.Status, p.Strategy, p.Image
+                                     from Portfolio p inner join Entry e on p.PositionID = e.PositionID 
+                                     where p.Market = 'long' and 
+                                     (p.opened_at >= timestampadd(day,-1,current_timestamp)"," 
+                                                  or
+                                                  p.closed_at >= timestampadd(minute,-1,current_timestamp))")) %>% fetch(n = -1)
+    
+    # checking if we have shares
+    shares <- dbSendQuery(mydb, paste0("select Symbol, sum(Volume) as Volume
+                                                      from Game_Transactions 
+                                                      group by Symbol")) %>% fetch(n = -1)
+    
+    if(nrow(game_transactions) != 0){
+      for (i in 1:nrow(game_transactions)){
+        number_of_transactions <- dbSendQuery(mydb,paste("select Datetime from Game_Transactions
+                                                where  Datetime >= timestampadd(minute,-1,current_timestamp)",sep ="")) %>% 
+          fetch(n = -1)
+        number_of_transactions_today <- dbSendQuery(mydb, "select count(*) from Game_Transactions where Datetime > curdate()") %>% 
+          fetch(n = -1)
+        
+        Symbol <- game_transactions[i,"Symbol"]
+        
+        if((nrow(number_of_transactions) >= 2) & (nrow(number_of_transactions_today) >= 250)){
+        } else if((game_transactions[i,"Status"] == "close") & (sum(grep(Symbol,shares)) >= 1)){
+          
+          Index_location_share <- which(shares == Symbol)
+          url <- paste("https://projectrex.net/stocks/?key=285988f9&av_key=6EMR51HT1VKKE6ZA&request=sell&quantity=",
+                       shares[Index_location_share,2],
+                       "&symbol=",Symbol, sep = "")
+          sell_it <- fromJSON(url)
+          dbSendQuery(mydb, paste("insert into Game_Transactions (Symbol,Price,Volume,Budget,Strategy,Image) 
+                                       values ('",
+                                  Symbol,"' ,", sell_it$price,",", sell_it$quantity,",",
+                                  sell_it$budget,", '",
+                                  game_transactions[i,"Strategy"],"' ,",
+                                  game_transactions[i,"Image"],")",sep = ""))
+        } else {
+          budget <- dbSendQuery(mydb,"select Budget from Game_Transactions") %>% fetch(n = -1) %>% tail(1)
+          Volume <- game_transactions[i,"Volume"] 
+          if ((Volume * game_transactions[i,"Price"]) < budget){
+            Volume <- budget / game_transactions[i,"Price"]
+          }
+          url <- paste("https://projectrex.net/stocks/?key=285988f9&av_key=6EMR51HT1VKKE6ZA&request=buy&quantity=",
+                       game_transactions[i,"Volume"], 
+                       "&symbol=", Symbol,sep = "")
+          buy_it <- fromJSON(url)
+          dbSendQuery(mydb, paste("insert into Game_Transactions (Symbol,Price,Volume,Budget,Strategy,Image) 
+                                       values ('",
+                                  Symbol,"' ,", buy_it$price,",", buy_it$quantity,",",
+                                  buy_it$budget,", '",
+                                  game_transactions[i,"Strategy"],"' ,",
+                                  game_transactions[i,"Image"],")",sep = ""))
+        } 
+      }
+    }
+  
   Sys.sleep(60)
 }
 
