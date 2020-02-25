@@ -196,53 +196,667 @@ indicators <- function(df_price){
 
 ```
 
+### Time Series
+```{r}
+ts <- function(df_price){
+  fit <- auto.arima(Cl(df_price))
+  fit.forecast <- forecast(fit,h=1)
+  fitted <- as.data.frame(fit.forecast)
+  return(fitted)
+}
 
+```
 
+## Strategies
 
+### EMA strategies
+```{r}
+EMA_Strategy <- function(df_price){
+  # Define the current price
+  current_price <- tail(Cl(df_price),1)[[1]]
+  # Default for long and short
+  long <- FALSE
+  short <- FALSE 
+  # Define open long and open short
+  open_long <- FALSE
+  open_short <- FALSE
+  close_short <- FALSE
+  close_long <- FALSE
+  # If clause preparation
+  if((tail(Cl(df_price[-nrow(df_price),]),1)[[1]] < Indicators$EMA_50) & 
+     (tail(Cl(df_price[-nrow(df_price),]),1)[[1]] > Indicators$EMA_100)){
+    long <- TRUE
+  } else if ((tail(Cl(df_price[-nrow(df_price),]),1)[[1]] > Indicators$EMA_50) & 
+             (tail(Cl(df_price[-nrow(df_price),]),1)[[1]] < Indicators$EMA_100)){
+    short <- TRUE
+  }
+  # If clause open long and open short
+  if ((Indicators$slope_150 >= 30) == TRUE & (Indicators$slope_150 <= 90) == TRUE |
+      (Indicators$slope_100 >= 30) == TRUE & (Indicators$slope_100 <= 90) == TRUE | 
+      (Indicators$slope_50 >= 30) == TRUE & (Indicators$slope_50 <= 90) == TRUE |
+      long == TRUE |
+      current_price > Indicators$EMA_50){
+    
+    open_long == TRUE
+  } else if (Indicators$slope_150 < 0 &
+             Indicators$slope_100 < 0 &
+             Indicators$slope_50 < 0 &
+             short == TRUE |
+             current_price < Indicators$EMA_50) {
+    open_short == TRUE
+  }
+  #If clause close short
+  if (Indicators$rsi <= 30 |
+      Indicators$stochastic <= 20 |
+      (tail(Cl(df_price),1) >= (Indicators$EMA_100 - Indicators$EMA_100*0.001))) {
+    close_short <- TRUE
+  }
+  #close long
+  if (Indicators$rsi <= 70 |
+      Indicators$stochastic <= 80 |
+      (tail(Cl(df_price),1) <= (Indicators$EMA_100 - Indicators$EMA_100*0.001))) {
+    close_long <- TRUE
+  }
+  
+  Objects <- list(open_long, open_short, close_long, close_short)
+  return(Objects)
+}
+```
 
+### Time Series for buy
+```{r}
+time_series_buy <- function(df_price){
+  # Create prediction for next minute
+  ts_object <- ts(df_price)
+  # Define the current price
+  current_price <- tail(Cl(df_price),1)
+  # If clause
+  if (current_price <= round(ts_object$`Lo 80`, digits = 2)) {
+    decision <- TRUE
+  } else{
+    decision <- FALSE
+  }
+  return(decision)
+}
+```
 
+### Time Series for sell
+```{r}
 
+time_series_sell <- function(df_price){
+  # Create prediction for next minute
+  ts_object <- ts(df_price)
+  # Define the current price
+  current_price <- tail(Cl(df_price),1)
+  # If clause
+  if (current_price >= round(ts_object$`Hi 80`, digits = 2)) {
+    decision <- TRUE
+  } else{
+    decision <- FALSE
+  }
+  return(decision)
+}
 
+```
 
+### Stochastic
+```{r}
 
+Stochastic_Strategy <- function(df_price,Symbol){
+  # Define the current price
+  current_price <- tail(Cl(df_price),1)[[1]]
+  # Do we have signals?
+  #---------------------------------------------------------------------------------------------------------------------------------------
+  # Define long query
+  long_query <- dbSendQuery(mydb, paste0("SELECT * FROM signals WHERE Symbol = ", paste("'",Symbol,"'",rep = "")," AND 
+                                         LongShort = 'long' AND
+                                         Datetime >= '",Sys.time()-600,"'"))
+  # Retrieve all results from the server
+  long <- fetch(long_query, n = -1)
+        
+  # Define short query
+  short_query <- dbSendQuery(mydb, paste0("SELECT * FROM signals WHERE Symbol = ", paste("'",Symbol,"'",rep = "")," AND 
+                                         LongShort = 'short' AND
+                                         Datetime >= '",Sys.time()-600,"'"))
+  # Retrieve all results from the server
+  short <- fetch(short_query, n = -1)
+  # Default open long and open short
+  open_long <- FALSE
+  open_short <- FALSE
+  close_long <- FALSE
+  close_short <- FALSE
+  # If clause long open
+  if (nrow(long) >= 1 & 
+      (tail(Cl(df_price[-nrow(df_price),]),1)[[1]] >= Indicators$bb.mavg) & 
+      (indicators(df_price[-nrow(df_price),])['stochastic'] <= Indicators$stochastic)) {
+    open_long = TRUE
+  }
+  # If clause short open
+  if(nrow(short) >= 1 &
+     (tail(Cl(df_price[-nrow(df_price),]),1)[[1]] < Indicators$bb.mavg) &
+     (indicators(df_price[-nrow(df_price),])['stochastic'] >= Indicators$stochastic)){
+        open_short = TRUE
+  }
+  # If clause close_long
+  if ((tail(Cl(df_price),1)[[1]]) >= Indicators$bb.up |
+      (tail(Cl(df_price),1)[[1]] <= (Indicators$bb.mavg - Indicators$bb.mavg*0.001))){
+    close_long <- TRUE
+  }
+  # If clause close_short
+  if ((tail(Cl(df_price),1)[[1]]) <= Indicators$bb.up |
+      (tail(Cl(df_price),1)[[1]] >= (Indicators$bb.mavg - Indicators$bb.mavg*0.001))){
+    close_short <- TRUE
+  }
+  Objects <- list(open_long,open_short, close_long, close_short)
+  return(Objects)
+}
+```
 
+## LOOPS
 
+### While loop
+```{r}
 
+# First sell all shares for MCD if the open price is higher or equal than the bought price
+#----------------------------------------------------------------------------------------------------------
 
+while ("MCD" %in% PROFILE$shares.symol) {
+  MCD <- Price("MCD", Symbols_and_Keys$Keys[1])
+  if (tail(MCD$open,1)[[1]] - PROFILE$shares.price[which(PROFILE$shares.symbol %in% "MCD")] >= -1) {
+    sell_MCD <- paste("https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=sell&quantity=",
+                      PROFILE$shares.quantity[which(PROFILE$shares.symbol %in% "MCD")],
+                      "&symbol=MCD", sep = "")
+  } else {
+    Sys.sleep(60)
+  }
+}
 
+# Result of Sell
+sell_it <- fromJSON(sell_MCD)
+write.table(sell_it, file = "Sell_MCD.txt")
 
+# Change transaction counter and update Budget & PROFILE
+#----------------------------------------------------------------------------------------------------------
+transaction <- transaction + 1
+BUDGET <- sell_it$budget
+if (sell_it$symbol %in% PROFILE$shares.symbol == TRUE) {
+  position <- which(PROFILE$shares.symbol %in% sell_it$symbol)
+  PROFILE <- PROFILE[-position,]
+}
 
+#===========================================================================================================
+# While loop for transactions (buy and sell) 
+#===========================================================================================================
 
+# First Loops from 10 am to 2:00 pm and transactions are smaller or equal 250 Transactions
+#----------------------------------------------------------------------------------------------------------
+while (format(strptime(Sys.time(),"%Y-%m-%d %H:%M:%S"),"%H:%M") >= "15:00" & 
+       format(strptime(Sys.time(),"%Y-%m-%d %H:%M:%S"),"%H:%M") < "19:00" & 
+       transaction <= TRANSACTION) {
+  # BUY
+  #===========================================================================================================
+  
+  # FOR EVERY SYMBOLS IN KEYS CHECK THE STRATEGIES
+  #----------------------------------------------------------------------------------------------------------
+  for (i in 1:nrow(Symbols_and_Keys)){
+    # Define Price for each symbol and key
+    #----------------------------------------------------------------------------------------------------------
+    Symbol <- Symbols_and_Keys[i,1]
+    Key <- Symbols_and_Keys[i,2]
+    df_price <- Price(Symbol,Key)
+    # Check for indicators
+    #----------------------------------------------------------------------------------------------------------
+    indicators(df_price)
+    
+    # Stochastic strategy SIGNAL GENERATOR
+   #----------------------------------------------------------------------------------------------------------
+    if ((Indicators$rsi <= 30) & 
+        (Indicators$stochastic <= 15)){
+      # Query
+      stochastic_query_long <- paste("INSERT INTO signals (Symbol, LongShort, Datetime)
+                                VALUES (",
+                                paste("'",Symbol,"'", rep = ""), ", ",
+                                "'long'", ", ",
+                                paste("'",Sys.time(),"'", rep = ""),
+                                ")", rep = "")
+      # Send to database
+      dbSendQuery(mydb, stochastic_query_long)
+    }
+    if ((Indicators$rsi >= 70) & 
+        (Indicators$stochastic >= 85)){
+      # Query
+      stochastic_query_short <- paste("INSERT INTO signals (Symbol, LongShort, Datetime)
+                                VALUES (",
+                                paste("'",Symbol,"'", rep = ""), ", ",
+                                "'short'", ", ",
+                                paste("'",Sys.time(),"'", rep = ""),
+                                ")", rep = "")
+      # Send to database
+      dbSendQuery(mydb, stochastic_query_short)
+    }
+    
+    # Check for Strategies
+    #----------------------------------------------------------------------------------------------------------
+    if (EMA_Strategy(df_price)[[1]] == TRUE |
+        EMA_Strategy(df_price)[[2]] == TRUE |
+        time_series_buy(df_price) == TRUE |
+        Stochastic_Strategy(df_price, Symbol)[[1]] == TRUE |
+        Stochastic_Strategy(df_price, Symbol)[[2]] == TRUE) {
+      # Define which strategy was TRUE
+      strategy <- data.frame(Strategy = c("EMA Strategy_long", "EMA Strategy_short", 
+                                          "Time Series", "Stochastic_long", "Stochastic_short"), Result = c(EMA_Strategy(df_price)[[1]],
+                                                                                                            EMA_Strategy(df_price)[[2]],
+                                                                                                            time_series_buy(df_price),
+                                                                                                            Stochastic_Strategy(df_price, Symbol)[[1]],
+                                                                                                           Stochastic_Strategy(df_price, Symbol)[[2]]))
+      # Position of decision for strategy
+      position <- which(strategy$Result == TRUE)
+      
+      # Add true strategies to dataframe result
+      for (i in position) {
+      # Query to Database
+      # There are more instances which are checking for different symbols and if the conditions are TRUE then the results are stored
+      result_query <- paste("INSERT INTO result (PositionID, Symbol, Datetime, Strategy, Transaction, Price, EMA150,EMA100,EMA50,
+                       Slope150,Slope100,Slope50,RSI,bb_dn,bb_mavg,bb_up,bb_pctB,macd, stochastic)
+                                VALUES (",
+                      sample(1:100000,1),", ",
+                      paste0("'",Symbol,"'", rep = ""), ", ",
+                      paste0("'",Sys.time(),"'", rep = ""), ", ",
+                      paste0("'",strategy[i,1],"'", rep = ""), ", ",
+                      "'Buy'", ", ",
+                      tail(Cl(df_price),1), ", ",
+                      Indicators$EMA_150, ", ", Indicators$EMA_100, ", ", Indicators$EMA_50, ", ", 
+                      Indicators$slope_150, ", ", Indicators$slope_100, ", ", Indicators$slope_50, ", ", 
+                      Indicators$rsi, ", ", Indicators$bb.dn, ", ", Indicators$bb.mavg, ", ", 
+                      Indicators$bb.up, ", ", Indicators$bb.pctB, ", ", Indicators$macd.macd,", ", Indicators$stochastic,
+                      ")", rep = "")
+      # Send to database
+      dbSendQuery(mydb, result_query)
+      }
+    }
+  }
+  # Get the buy options from the last minute and 10 sec
+  get_buy_options <- dbSendQuery(mydb, paste0("SELECT PositionID, Symbol, Strategy, Price
+                                     FROM result
+                                     WHERE Datetime >= '",Sys.time()-70,"'"))
+  # Retrieve the results from the server
+  get_buy <- fetch(get_buy_options, n = -1)
+  
+  # Check the dimensions of the buy options of the last minute
+  if (dim(get_buy)[1] != 0) {
+    # Define the symbol with the most TRUE strategies
+    sum_symbols <- data.frame(matrix(ncol = 2, nrow = 0))
+    colnames(sum_symbols) <- c("Symbol", "Sum")
+    for (i in get_buy$Symbol) {
+        sum_of_symbol <- sum(as.character(i) %in% get_buy$Symbol)
+        if (sum_of_symbol != 0) {
+          if (as.character(i) %in% sum_symbols$Symbol == TRUE) {
+            sum_symbols[which(sum_symbols$Symbol %in% as.character(i)),2] <- sum_symbols[which(as.character(i) %in% sum_symbols$Symbol),2] + 1
+          } else{
+            sum_symbols <- rbind(sum_symbols, data.frame("Symbol" = as.character(i), 
+                                                         "Sum" = sum_of_symbol)) 
+          }
+        }
+      }
+    # Chose the symbol with the most TRUE strategies (if there are more than one result, sample it)
+    symbol_to_buy <- sample(sum_symbols[which(sum_symbols$Sum == max(sum_symbols$Sum)),1],1)
+    # Define quantity (quantity = amount of true strategies)
+    quantity_to_buy <- sum_symbols[which(sum_symbols$Symbol %in% symbol_to_buy),2]
+    # Buy it if the budget is bigger than the quantity * price
+    price_to_buy <- as.numeric(sample(get_buy[which(get_buy$Symbol %in% symbol_to_buy),4],1))
+    if (BUDGET > quantity_to_buy*price_to_buy) {
+      url_buy <- buy(symbol_to_buy, quantity_to_buy) 
+    }
+    buy_it <- get_buy[min(which(get_buy$Symbol %in% as.character(symbol_to_buy))),]
+    
+    # Save information for the database
+    #----------------------------------------------------------------------------------------------------------
+    # Result of Buy
+    json_buy <- fromJSON(url_buy)
+    # Query to Database
+    #----------------------------------------------------------------------------------------------------------
+    buy_query <- paste("INSERT INTO buy_1 (PositionID, Symbol, Price, Quantity, Datetime,Strategy) 
+                       VALUES (",
+                       buy_it$PositionID, ", ",
+                       paste("'",buy_it$Symbol,"'", rep = ""), ", ",
+                       json_buy$price, ", ", 
+                       json_buy$quantity, ", ", 
+                       paste0("'",Sys.time(),"'", rep = ""), ", ",
+                       paste("'",buy_it$Strategy,"'", rep = ""),
+                       ")", rep = "")
+    # Send the query to the buy table
+    dbSendQuery(mydb, buy_query)
+    
+    # Change transaction counter and update Budget & PROFILE
+    #----------------------------------------------------------------------------------------------------------
+    transaction <- transaction + 1
+    BUDGET <- json_buy$budget
+    # First check if share exists in Profile, if so: add the values, if not: go to next row and add to Profile
+    if (buy_it$Symbol %in% PROFILE$shares.symbol == TRUE) {
+      position <- which(PROFILE$shares.symbol %in% buy_it$Symbol)
+      PROFILE[position,] <- data.frame(shares.symbol = as.character(buy_it$Symbol), 
+                                       shares.price = json_buy$price, 
+                                       shares.quantity = as.numeric(PROFILE$shares.quantity[position])+json_buy$quantity, 
+                                       shares.total = as.numeric(PROFILE$shares.total[position])+json_buy$quantity*json_buy$price,
+                                       Strategy = as.character(buy_it$Strategy))
+    } else {
+      PROFILE <- rbind(PROFILE, data.frame(shares.symbol = buy_it$Symbol, 
+                                           shares.price = json_buy$price, 
+                                           shares.quantity = json_buy$quantity, 
+                                           shares.total = json_buy$quantity*json_buy$price,
+                                           Strategy = buy_it$Strategy))
+    }
+  }
+  Sys.sleep(60)
+  
+  # SELL
+  #===========================================================================================================
+  
+  # PREPARATION
+  #----------------------------------------------------------------------------------------------------------
+  
+  # Define empty result dataframe
+  result <- data.frame(matrix(ncol = 20, nrow = 0))
+  # Colnames
+  colnames(result) <- colnames
+  
+  # Define list of Symbols and Keys in which shares are in Profile
+  #----------------------------------------------------------------------------------------------------------
 
+  # Check if there are more than 5 symbols in the Profile
+  if(length(PROFILE$shares.symbol) > 5){
+    Symbols <- sample(PROFILE$shares.symbol, 5)
+  } else {Symbols <- PROFILE$shares.symbol}
+  # Define Symbols, Keys and Strategy
+  if (length(Symbols) != 0) {
+  Symbols_and_Keys_Strategy <- data.frame(Symbols = Symbols, Keys = Symbols_and_Keys$Keys[length(Symbols)],
+                                          Strategy = subset(PROFILE, shares.symbol %in% Symbols, select = Strategy))
+  # Check if new Symbols and Keys have minimum one symbol
+  if (nrow(Symbols_and_Keys_Strategy) >= 1) {
+  # FOR EVERY SYMBOLS IN KEYS CHECK THE STRATEGIES
+ #----------------------------------------------------------------------------------------------------------
+  for (i in 1:nrow(Symbols_and_Keys_Strategy)){
+      
+    # Define Price for each symbol and key
+    #----------------------------------------------------------------------------------------------------------
+    Symbol <- Symbols_and_Keys_Strategy[i,1]
+    Key <- Symbols_and_Keys_Strategy[i,2]
+    Strategy <- Symbols_and_Keys_Strategy[i,3]
+    df_price <- Price(Symbol,Key)
+    # Check for indicators
+    #----------------------------------------------------------------------------------------------------------
+    indicators(df_price)
+    # Check for Strategies (if the open position is true and the strategie for sell is true then sell)
+    #----------------------------------------------------------------------------------------------------------
+    if ((Strategy == "EMA Strategy_long" & EMA_Strategy(df_price)[[3]]) == TRUE |
+        (Strategy == "EMA Strategy_short" & EMA_Strategy(df_price)[[4]]) == TRUE |
+        (Strategy == "Time Series" & time_series_sell(df_price)[[1]]) == TRUE |
+        (Strategy == "Stochastic_long" & Stochastic_Strategy(df_price, Symbol)[[3]]) == TRUE |
+        (Strategy == "Stochastic_short" & Stochastic_Strategy(df_price, Symbol)[[4]]) == TRUE) {
+      # Define which strategy was TRUE
+      strategy <- data.frame(Strategy = c("EMA Strategy_long", "EMA Strategy_short", 
+                                          "Time Series", "Stochastic_long", "Stochastic_short"), Result = c(EMA_Strategy(df_price)[[3]],
+                                                                                                            EMA_Strategy(df_price)[[4]],
+                                                                                                            time_series_sell(df_price),
+                                                                                                            Stochastic_Strategy(df_price, Symbol)[[3]],
+                                                                                                            Stochastic_Strategy(df_price, Symbol)[[4]]))
+      
+      # Position of decision for strategy
+      position <- which(strategy$Result == TRUE)
+      
+      # Add true strategies to dataframe result
+      for (i in position) {
+        result <- rbind(result, data.frame(PositionID = sample(1:100000,1), 
+                                           Symbol = Symbol,
+                                           Price = tail(Cl(df_price),1),
+                                           Quantity = 1,
+                                           Datetime = Sys.time(),
+                                           Strategy = strategy[i,1],
+                                           EMA150 = Indicators$EMA_150,
+                                           EMA100 = Indicators$EMA_100,
+                                           EMA50 = Indicators$EMA_50,
+                                           Slope150 = Indicators$slope_150,
+                                           Slope100 = Indicators$slope_100,
+                                           Slope50 = Indicators$slope_50,
+                                           RSI = Indicators$rsi,
+                                           bb_dn = Indicators$bb.dn,
+                                           bb_mavg = Indicators$bb.mavg,
+                                           bb_up = Indicators$bb.up,
+                                           bb_pctB = Indicators$bb.pctB,
+                                           macd = Indicators$macd.macd,
+                                           Transaction = "Sell"))
+      }
+    }
+  }
+}
+    if (dim(result)[1] != 0) {
+      # Chose randomly which one to sell
+      symbol_to_sell <- sample(result$Symbol,1)
+      # Sell all shares
+      quantity_to_sell <- PROFILE[which(PROFILE$shares.symbol %in% symbol_to_sell),3]
+      url_sell <- sell(symbol_to_sell, quantity_to_sell)
+      sell_it <- subset(result, Symbol == symbol_to_sell)
+      
+      # Save information for the database
+      #----------------------------------------------------------------------------------------------------------
+      # Result of Sell
+      json_sell <- fromJSON(url_sell)
+      # Query to Database
+      #----------------------------------------------------------------------------------------------------------
+      sell_query <- paste("INSERT INTO sell_1 (","PositionID, Symbol, Price, Quantity, Datetime,Strategy,EMA150,EMA100,EMA50,
+                       Slope150,Slope100,Slope50,RSI,bb_dn,bb_mavg,bb_up,bb_pctB,macd) 
+                       VALUES (",
+                         sell_it$PositionID, ", ",
+                         paste("'",sell_it$Symbol,"'", rep = ""), ", ",
+                         json_sell$price, ", ", 
+                         json_sell$quantity, ", ", 
+                         paste("'",sell_it$Datetime,"'", rep = ""), ", ", 
+                         paste("'",sell_it$Strategy,"'", rep = ""), ", ", 
+                         sell_it$EMA150, ", ", sell_it$EMA100, ", ", sell_it$EMA50, ", ", 
+                         sell_it$Slope150, ", ", sell_it$Slope100, ", ", sell_it$Slope50, ", ", 
+                         sell_it$RSI, ", ", sell_it$bb_dn, ", ", sell_it$bb_mavg, ", ", 
+                         sell_it$bb_up, ", ", sell_it$bb_pctB, ", ", sell_it$macd,
+                         # "image",
+                         ")", rep = "")
+      # Send the query to the buy table
+      dbSendQuery(mydb, sell_query)
+      
+      # Change transaction counter and update Budget & PROFILE
+      #----------------------------------------------------------------------------------------------------------
+      transaction <- transaction + 1
+      # Calculate new Budget
+      BUDGET <- json_sell$budget
+      # Delete the row in Profile with the sold stock
+      if (sell_it$Symbol %in% PROFILE$shares.symbol == TRUE) {
+        position <- which(PROFILE$shares.symbol %in% sell_it$Symbol)
+        PROFILE <- PROFILE[-position,]
+      }
+    }
+  }
+  Sys.sleep(60)
+}
 
+```
 
+## EMERGENCY Script
+```{r}
 
+# EMERGENCY SCRIPT at 02:00 pm
+#----------------------------------------------------------------------------------------------------------
 
+# Write the output into table transaction
+#----------------------------------------------------------------------------------------------------------
 
+# Define colnames for Transactions
+transactions_colnames <- c("status","description","symbol","price","quantity","budget","Datetime","Transaction","TNo")
 
+# Create empty buy_it dataframe
+buy_it <- data.frame(matrix(ncol = 9, nrow = 0))
+colnames(buy_it) <- transactions_colnames
 
+# Create empty sell_it dataframe
+sell_it <- data.frame(matrix(ncol = 9, nrow = 0))
+colnames(sell_it) <- transactions_colnames
 
+# Define the buy query
+buy_query_function <- function(buy_it){
+  buy_query <- paste("INSERT INTO DailyLogBook (status,description,symbol,price,quantity,budget,Datetime,Transaction,TNo) 
+                   VALUES (", 
+                     buy_it$status, ", ",
+                     paste("'",buy_it$description,"'", rep = ""), ", ",
+                     paste("'",buy_it$symbol,"'", rep = ""), ", ",
+                     buy_it$price, ", ", 
+                     buy_it$quantity, ", ", 
+                     buy_it$budget, ", ", 
+                     paste("'",buy_it$Datetime,"'", rep = ""), ", ", 
+                     paste("'",buy_it$Transaction,"'", rep = ""), ", ", 
+                     buy_it$TNo, 
+                     ")", rep = "")
+  return(buy_query)
+}
 
+# Define the sell query
+sell_query_function <- function(sell_it){
+  sell_query <- paste("INSERT INTO DailyLogBook (status,description,symbol,price,quantity,budget,Datetime,Transaction,TNo) 
+                   VALUES (", 
+                      sell_it$status, ", ",
+                      paste("'",sell_it$description,"'", rep = ""), ", ",
+                      paste("'",sell_it$symbol,"'", rep = ""), ", ",
+                      sell_it$price, ", ", 
+                      sell_it$quantity, ", ", 
+                      sell_it$budget, ", ", 
+                      paste("'",sell_it$Datetime,"'", rep = ""), ", ", 
+                      paste("'",sell_it$Transaction,"'", rep = ""), ", ", 
+                      sell_it$TNo,
+                      ")", rep = "")
+  return(sell_query)
+}
 
+#===========================================================================================================
+# WHILE LOOP
+#===========================================================================================================
+# Define MCD counter
+MCD_counter <- 1
+while (transaction <= TRANSACTION &
+       format(strptime(Sys.time(),"%Y-%m-%d %H:%M:%S"),"%H:%M") < "20:50"){
+  
+  # Buy
+  #----------------------------------------------------------------------------------------------------------
+  if (MCD_counter < 29) {
+    url_buy <- "https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=buy&quantity=1&symbol=MCD"
+    buy_it <- fromJSON(url_buy)
+    # Add the DateTime
+    buy_it$Datetime <- Sys.time()
+    # Add the type of transaction
+    buy_it$Transaction <- "Buy"
+    # Count transaction
+    transaction <- transaction + 1
+    # Add transaction number to dataframe
+    buy_it$TNo <- transaction
+    # Define the sell query
+    buy_query <- buy_query_function(buy_it)
+    # Send the query to the transaction table
+    dbSendQuery(mydb, buy_query)
+    # Set counter +1
+    MCD_counter <- MCD_counter + 1
+    # Sleep
+    Sys.sleep(1) 
+  }
+  
+  # Sell
+  #----------------------------------------------------------------------------------------------------------
+  if (MCD_counter < 29) {
+  url_sell <- "https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=sell&quantity=1&symbol=MCD"
+  sell_it <- fromJSON(url_sell)
+  # Add the DateTime
+  sell_it$Datetime <- Sys.time()
+  # Add the type of transaction
+  sell_it$Transaction <- "Sell"
+  # Count transaction
+  transaction <- transaction + 1
+  # Add transaction number to dataframe
+  sell_it$TNo <- transaction
+  # Define the sell query
+  sell_query <- sell_query_function(sell_it)
+  # Send the query to the transaction table
+  dbSendQuery(mydb, sell_query)
+  # Set counter +1
+  MCD_counter <- MCD_counter + 1
+  # Sleep
+  Sys.sleep(60)
+  }
+}
 
+# Check budget and decrease it to zero by buying stable stocks
+#----------------------------------------------------------------------------------------------------------
+# Price for stable stock
+MCD <- Price("MCD", Symbols_and_Keys$Keys[2])
+# Quantity to buy in order to decrease the budget to zero
+Quantity_to_buy <- floor(buy_it$budget/tail(Cl(MCD),1)[[1]])
 
+# Buy the stable stock 
+buy_MCD <- paste("https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=buy&quantity=",
+                  Quantity_to_buy,
+                  "&symbol=MCD", sep = "")
+# Result of Buy
+buy_it <- fromJSON(buy_MCD)
+# Add the DateTime
+buy_it$Datetime <- Sys.time()
+# Add the type of transaction
+buy_it$Transaction <- "Buy"
+# Count transaction
+transaction <- transaction + 1
+# Add transaction number to dataframe
+buy_it$TNo <- transaction
+# Define the sell query
+buy_query <- buy_query_function(buy_it)
+# Send the query to the transaction table
+dbSendQuery(mydb, buy_query)
 
+# Change transaction counter and update Budget & PROFILE
+#----------------------------------------------------------------------------------------------------------
+transaction <- transaction + 1
+BUDGET <- buy_it$budget
+# First check if share exists in Profile, if so: add the values, if not: go to next row and add to Profile
+if (buy_it$symbol %in% PROFILE$shares.symbol == TRUE) {
+  position <- which(PROFILE$shares.symbol %in% buy_it$symbol)
+  PROFILE[position,] <- data.frame(shares.symbol = as.character(buy_it$symbol), 
+                                   shares.price = buy_it$price, 
+                                   shares.quantity = as.numeric(PROFILE$shares.quantity[position])+buy_it$quantity, 
+                                   shares.total = as.numeric(PROFILE$shares.total[position])+buy_it$quantity*buy_it$price,
+                                   Strategy = "Safe")
+} else {
+  PROFILE <- rbind(PROFILE, data.frame(shares.symbol = buy_it$symbol, 
+                                       shares.price = buy_it$price, 
+                                       shares.quantity = buy_it$quantity, 
+                                       shares.total = buy_it$quantity*buy_it$price,
+                                       Strategy = "Safe"))
+}
 
+# Check budget and decrease it to zero by buying penny stocks
+#----------------------------------------------------------------------------------------------------------
+# Price for stable stock
+Pola <- Price("POLA", Symbols_and_Keys$Keys[1])
+# Quantity to buy in order to decrease the budget to zero
+Quantity_to_buy <- floor(buy_it$budget/tail(Cl(MCD),1)[[1]])
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Buy the penny stock 
+buy_Pola <- paste("https://projectrex.net/stocks/?key=2b726457&av_key=OBEKR8AXV71DDV2I&request=buy&quantity=",
+                 Quantity_to_buy,
+                 "&symbol=POLA", sep = "")
+# Result of Buy
+buy_it <- fromJSON(buy_Pola)
+# Add the DateTime
+buy_it$Datetime <- Sys.time()
+# Add the type of transaction
+buy_it$Transaction <- "Buy"
+# Count transaction
+transaction <- transaction + 1
+# Add transaction number to dataframe
+buy_it$TNo <- transaction
+# Define the sell query
+buy_query <- buy_query_function(buy_it)
+# Send the query to the transaction table
+dbSendQuery(mydb, buy_query)
+```
 
