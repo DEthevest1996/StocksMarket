@@ -82,5 +82,5 @@ This project was a part of the class CIS-544 DATA MINING & MACHINE LRNG at St Th
 
 ## Acknowledgments
 
-None
+Dr. Mondesire
 
